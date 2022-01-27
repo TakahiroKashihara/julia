@@ -1,6 +1,6 @@
 using Distributed
 rmprocs(workers())
-addprocs(2)
+addprocs(20)
 @everywhere using SharedArrays#@everywhereがいらない？
 @everywhere using LinearAlgebra
 @everywhere using ProgressBars
@@ -26,12 +26,9 @@ end
     resB::Vector{Float64}
 end
 @everywhere struct Va
-    
+    BZ::Array{Any}
     BZ1::Vector{Any}
     hsbz::Vector{Any}
-    pnmn::Vector{Any}
-    pnm0::Vector{Any}
-    p0mn::Vector{Any}
     
 end
 
@@ -208,7 +205,7 @@ function ok()
     return()
 end
 function mainU()
-    p = Parm(#=reshapeと合わせる=#0.2, #=Nk=#5, #=Nw.これもreshapeと合わせる=#1000, 1/20/100, 10000, parse.(Float64,ARGS[2])/2, parse.(Float64,ARGS[1]), parse.(Float64,ARGS[2]))
+    p = Parm(#=reshapeと合わせる=#0.2, #=Nk=#100, #=Nw.これもreshapeと合わせる=#1000, 1/20/100, 10000, parse.(Float64,ARGS[2])/2, parse.(Float64,ARGS[1]), parse.(Float64,ARGS[2]))
     se = SE(swise(p.M,p.U)...)
     println("NK = $(p.Nk)")
    
@@ -232,11 +229,12 @@ function mainU()
     end
     
     kx = range(-pi,pi,length = p.Nk)
-    ky = copy(kx)
+    ky = range(-pi,pi,length = p.Nk )
+ 
     BZ = Array{Any}(undef,length(kx),length(ky))
-    for i in 1:length(kx)
-        for j in 1:length(ky)
-            BZ[i,j] = [kx[i],ky[j]]
+    for i in 1:length(ky)
+        for j in 1:length(kx)
+            BZ[j,i] = [kx[i],ky[j]]
         end
     end
     BZ1 = []
@@ -245,71 +243,63 @@ function mainU()
             push!(BZ1,[kx[i],ky[j]])
         end
     end
-    pnmn = []
-    for NE1 in 1:length(se.omegah)
-        for NE in 1:length(se.omega)
-            if 1 <= (NE-NE1) && (NE + NE1) <= length(se.omega)
-                push!(pnmn,[NE1,NE])
-            end
-        end
-    end
-    pnm0 = []
-    for NE1 in 1:length(se.omegah)
-        for NE in 1:length(se.omega)
-            if 1 > (NE-NE1) &&  (NE + NE1) <= length(se.omega)
-                push!(pnm0,[NE1,NE])
-            end
-        end
-    end
-    p0mn = []
-    for NE1 in 1:length(se.omegah)
-        for NE in 1:length(se.omega)
-            if 1 <= (NE-NE1) && (NE + NE1) > length(se.omega)
-                push!(p0mn,[NE1,NE])
-            end
-        end
-    end
+    
     ok()
-    va = Va(BZ1,hsbz,pnmn,pnm0,p0mn)
+    
+ 
+    
+    va = Va(BZ,BZ1,hsbz)
     ok()
 
-    kx = SharedArray{Float64}(length(va.hsbz))
-    ky = SharedArray{Float64}(length(va.hsbz))    
-    trg = SharedArray{Float64}(length(va.hsbz))
-    detg = SharedArray{Float64}(length(va.hsbz))
-    sqdetg = SharedArray{Float64}(length(va.hsbz))
-
-    @sync @distributed for i in 1:length(va.hsbz)
-    kx[i] = va.hsbz[i][1]
-    ky[i] = va.hsbz[i][2]
-    trgk,detgk,sqdetgk = qmgk(va.hsbz[i],p,se)
-    trg[i] = trgk
-    detg[i] = detgk
-    sqdetg[i] =sqdetgk  
+    kxs = SharedArray{Float64}(length(kx),length(ky))
+    kys = SharedArray{Float64}(length(kx),length(ky))    
+    trg = SharedArray{Float64}(length(kx),length(ky))
+    detg = SharedArray{Float64}(length(kx),length(ky))
+    sqdetg = SharedArray{Float64}(length(kx),length(ky))
+    @sync @distributed for i = 1:p.Nk
+        for j in 1:p.Nk
+            kxs[i,j] = va.BZ[i,j][1]
+            kys[i,j] = va.BZ[i,j][2]
+            trgk,detgk,sqdetgk = qmgk(va.BZ[i,j],p,se)
+            trg[i,j] = trgk
+            detg[i,j] = detgk
+            sqdetg[i,j] = sqdetgk
+        end
     end
-    for i in 1:length(va.hsbz)
-        open("./ditest.dat","a+") do f
-            x = kx[i]
-            y = ky[i]
-            trgk = trg[i]
-            detgk = detg[i]
-            sqdetgk = sqdetg[i]
-            #println("kx = $(kx), ky = $(ky),trg =  $(trgk),detg =  $(detgk),sqdetg =  $(sqdetgk)")
+    
+    for i in 1:p.Nk
+        for j in 1:p.Nk
+            open("./metric.dat","a+") do f
+                x = kxs[i,j]
+                y = kys[i,j]
+                trgk = trg[i,j]
+                detgk = detg[i,j]
+                sqdetgk = sqdetg[i,j]
+                #println("kx = $(kx), ky = $(ky),trg =  $(trgk),detg =  $(detgk),sqdetg =  $(sqdetgk)")
 
-            println(f,"$(x) $(y) $(trgk) $(detgk) $(sqdetgk)")
+                println(f,"$(x) $(y) $(trgk) $(detgk) $(sqdetgk)")
+            end
         end
 
     end
+    println("write_ok")
+    ENV["GKSwstype"]="nul"
+    heatmap(kx,ky,trg,xlabel = "kx",ylabel = "ky",title = "tr(g)")
+    savefig("./trgmap.png")
+    heatmap(kx,ky,detg,xlabel = "kx",ylabel = "ky",title = "det(g)")
+    savefig("./detmap.png")
+    heatmap(kx,ky,sqdetg,xlabel = "kx",ylabel = "ky",title = "sqdet(g)")
+    savefig("./sqdetmap.png")
     
 end
 
-include("retestlocal.jl")
+include("retestserver.jl")
 
 @time mainU()
 
 println("completed,M=$(ARGS[1]),U=$(ARGS[2])")
 rmprocs(workers())
-#addprocs(5),Nk=5(15点)で9分20秒
+#addprocs(2),Nk = 5で223秒
 
 #=a = SharedArray{Float64}(2,2)
 @distributed for i in 1:2
