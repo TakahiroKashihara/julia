@@ -5,6 +5,7 @@ addprocs(20)
 @everywhere using LinearAlgebra
 @everywhere using ProgressBars
 @everywhere using Plots
+@everywhere using LaTeXStrings
 
 @everywhere struct Parm
     R::Float64
@@ -205,25 +206,26 @@ function ok()
     return()
 end
 function mainU()
-    p = Parm(#=reshapeと合わせる=#0.2, #=Nk=#100, #=Nw.これもreshapeと合わせる=#1000, 1/20/100, 10000, parse.(Float64,ARGS[2])/2, parse.(Float64,ARGS[1]), parse.(Float64,ARGS[2]))
+    p = Parm(#=reshapeと合わせる=#0.2, #=Nk=#10, #=Nw.これもreshapeと合わせる=#1000, 1/20/100, 10000, parse.(Float64,ARGS[2])/2, parse.(Float64,ARGS[1]), parse.(Float64,ARGS[2]))
     se = SE(swise(p.M,p.U)...)
+    Nkh = Int(Nk/2)
     println("NK = $(p.Nk)")
    
     hsbz= []
        
 
-    for i in 1:p.Nk
+    for i in 1:Nkh
         ky = 0.
-        kx = (pi/p.Nk)*i
+        kx = (pi/Nkh)*i
         push!(hsbz,[kx,ky])
     end 
-    for i in 1:p.Nk
+    for i in 1:Nkh
         kx = Float64(pi) 
-        ky = (pi/p.Nk) * i
+        ky = (pi/Nkh) * i
         push!(hsbz,[kx,ky])
     end
-    for i in 1:p.Nk
-        kx = Float64(pi) - (Float64(pi)/p.Nk)*i
+    for i in 1:Nkh
+        kx = Float64(pi) - (Float64(pi)/Nkh)*i
         ky = kx
         push!(hsbz,[kx,ky])
     end
@@ -250,7 +252,42 @@ function mainU()
     
     va = Va(BZ,BZ1,hsbz)
     ok()
+    #高対称点
+    kxhs = SharedArray{Float64}(length(va.hsbz))
+    kyhs = SharedArray{Float64}(length(va.hsbz))
+    trghs = SharedArray{Float64}(length(va.hsbz))
+    detghs = SharedArray{Float64}(length(va.hsbz))
+    sqdetghs = SharedArray{Float64}(length(va.hsbz))
+    @sync @distributed for i = 1:length(va.hsbz)
+        kxhs[i] = va.hsbz[i][1]
+        kyhs[i] = va.hsbz[i][2]
+        trgk,detgk,sqdetgk = qmgk(va.hsbz[i],p,se)
+        trghs[i] = trgk
+        detghs[i] = detgk
+        sqdetghs[i] = sqdetgk
 
+    end
+    pyplot()
+    plot(trghs,ylabel = "QuantumMetric",label = L"\mathrm{Tr}(g)",xticks = 
+    ([1,Int(length(va.hsbz)/3),Int(length(va.hsbz)*2/3),length(va.hsbz)],[L"\Gamma",L"X",L"M",L"\Gamma"]))
+    plot!(detghs,ylabel = "QuantumMetric",label = L"\mathrm{det}(g)",xticks = 
+    ([1,Int(length(va.hsbz)/3),Int(length(va.hsbz)*2/3),length(va.hsbz)],[L"\Gamma",L"X",L"M",L"\Gamma"]))
+    plot!(detghs,ylabel = "QuantumMetric",label = L"\sqrt{\mathrm{det}(g)}",xticks = 
+    ([1,Int(length(va.hsbz)/3),Int(length(va.hsbz)*2/3),length(va.hsbz)],[L"\Gamma",L"X",L"M",L"\Gamma"]))
+
+    for i in 1:length(va.hsbz)
+        open("./metric_hs.dat","a+") do f
+            x = kxhs[i]
+            y = kyhs[i]
+            trgk = trghs[i]
+            detgk = detghs[i]
+            sqdetgk = sqdetghs[i]
+            println(f,"$(x) $(y) $(trgk) $(detgk) $(sqdetgk)")
+        end
+    end
+
+    println("hsbz_ok")
+    #BZ全て
     kxs = SharedArray{Float64}(length(kx),length(ky))
     kys = SharedArray{Float64}(length(kx),length(ky))    
     trg = SharedArray{Float64}(length(kx),length(ky))
@@ -284,12 +321,48 @@ function mainU()
     end
     println("write_ok")
     ENV["GKSwstype"]="nul"
-    heatmap(kx,ky,trg,xlabel = "kx",ylabel = "ky",title = "tr(g)")
+    surface(kx,ky,trg,xlabel = "\$kx\$",ylabel = "\$ky\$",title = L"\mathrm{tr}(g)")
     savefig("./trgmap.png")
-    heatmap(kx,ky,detg,xlabel = "kx",ylabel = "ky",title = "det(g)")
+    surface(kx,ky,detg,xlabel = "\$kx\$",ylabel = "\$ky\$",title = L"\mathrm{det}(g)")
     savefig("./detmap.png")
-    heatmap(kx,ky,sqdetg,xlabel = "kx",ylabel = "ky",title = "sqdet(g)")
+    surface(kx,ky,sqdetg,xlabel = "\$kx\$",ylabel = "\$ky\$",title = L"\sqrt{\mathrm{det}(g)}")
     savefig("./sqdetmap.png")
+    println("BZ_ok")
+    #符号
+    trsgn = SharedArray{Float64}(length(kx),length(ky))
+    detsgn = SharedArray{Float64}(length(kx),length(ky))
+    @sync @distributed for i = 1:Nk
+        for j in 1:Nk
+            if trg[i,j] >=0
+                sgn[i,j] = 1
+            else
+                sgn[i,j] = -1
+            end
+        end
+    end
+    @sync @distributed for i = 1:Nk
+        for j in 1:Nk
+            if detg[i,j] >=0
+                sgn[i,j] = 1
+            else
+                sgn[i,j] = -1
+            end
+        end
+    end
+    ENV["GKSwstype"]="nul"
+    heatmap(kx,ky,trsgn,xlabel = "\$kx\$",ylabel = "\$ky\$",title = L"sgn\mathrm{tr}(g)")
+    savefig("./trsgn.png")
+    heatmap(kx,ky,detsgn,xlabel = "\$kx\$",ylabel = "\$ky\$",title = L"sgn\mathrm{det}(g)")
+    savefig("./detsgn.png")
+    println("sgn_ok")
+
+    #積分値
+    open("./metric_int.dat","a+") do f
+        trg_int = sum(trg)*(2*pi/p.Nk)^2
+        sqdetg_int = sum(sqdetg)*(2*pi/p.Nk)^2
+        println(f,"$(trg_int) $(sqdetg_int)")
+    end
+    println("int_ok")
     
 end
 
