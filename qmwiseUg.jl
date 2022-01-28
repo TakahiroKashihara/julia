@@ -267,12 +267,12 @@ function mainU()
         sqdetghs[i] = sqdetgk
 
     end
-    pyplot()
+    
     plot(trghs,ylabel = "QuantumMetric",label = L"\mathrm{Tr}(g)",xticks = 
     ([1,Int(length(va.hsbz)/3),Int(length(va.hsbz)*2/3),length(va.hsbz)],[L"\Gamma",L"X",L"M",L"\Gamma"]))
     plot!(detghs,ylabel = "QuantumMetric",label = L"\mathrm{det}(g)",xticks = 
     ([1,Int(length(va.hsbz)/3),Int(length(va.hsbz)*2/3),length(va.hsbz)],[L"\Gamma",L"X",L"M",L"\Gamma"]))
-    plot!(detghs,ylabel = "QuantumMetric",label = L"\sqrt{\mathrm{det}(g)}",xticks = 
+    plot!(sqdetghs,ylabel = "QuantumMetric",label = L"\sqrt{\mathrm{det}(g)}",xticks = 
     ([1,Int(length(va.hsbz)/3),Int(length(va.hsbz)*2/3),length(va.hsbz)],[L"\Gamma",L"X",L"M",L"\Gamma"]))
 
     for i in 1:length(va.hsbz)
@@ -320,14 +320,7 @@ function mainU()
 
     end
     println("write_ok")
-    ENV["GKSwstype"]="nul"
-    surface(kx,ky,trg,xlabel = "\$kx\$",ylabel = "\$ky\$",title = L"\mathrm{tr}(g)")
-    savefig("./trgmap.png")
-    surface(kx,ky,detg,xlabel = "\$kx\$",ylabel = "\$ky\$",title = L"\mathrm{det}(g)")
-    savefig("./detmap.png")
-    surface(kx,ky,sqdetg,xlabel = "\$kx\$",ylabel = "\$ky\$",title = L"\sqrt{\mathrm{det}(g)}")
-    savefig("./sqdetmap.png")
-    println("BZ_ok")
+    
     #符号
     trsgn = SharedArray{Float64}(length(kx),length(ky))
     detsgn = SharedArray{Float64}(length(kx),length(ky))
@@ -363,6 +356,7 @@ function mainU()
         println(f,"$(trg_int) $(sqdetg_int)")
     end
     println("int_ok")
+    
     
 end
 
