@@ -200,15 +200,51 @@ end
     end
     return((gxxk + gyyk)*(p.R/p.Nw)^2,(gxxk*gyyk-gxyk^2)*(p.R/p.Nw)^4,sqrt(abs((gxxk*gyyk-gxyk^2)*(p.R/p.Nw)^4)))
 end
+@everywhere function trgkm(k::Vector{Float64},M::Float64)
+     
+    v,w = eigen(H(k,M))
+    pv = v[2]
+    mv = v[1]
+    pw = w[:,2]
+    mw = w[:,1]
+    
+    #g_xx
+    gxx = (abs(dot(mw,H_dx(k) * pw)))^2/(pv-mv)^2
+    #g_yy
+    gyy = (abs(dot(mw,H_dy(k) * pw)))^2/(pv-mv)^2
+    #tr_g
+    g = gxx + gyy
+           
+    return(g)
+end
+@everywhere function detgkm(k::Vector{Float64},M::Float64)
+    v,w = eigen(H(k,M))
+    pv = v[2]
+    mv = v[1]
+    pw = w[:,2]
+    mw = w[:,1]
+   
+    #g_xx
+    gxx = (abs(dot(mw,H_dx(k) * pw)))^2/(pv-mv)^2
+    #g_yy
+    gyy = (abs(dot(mw,H_dy(k) * pw)))^2/(pv-mv)^2
+    #g_xy
+    gxy = real((dot(mw,H_dx(k) * pw)*dot(pw,H_dy(k) * mw))/(pv-mv)^2)
+
+    #det_g
+    g = sqrt(abs(gxx*gyy - gxy^2))
+    return(g)
+end
+
 
 function ok()
     println("ok")
     return()
 end
 function mainU()
-    p = Parm(#=reshapeと合わせる=#0.2, #=Nk=#10, #=Nw.これもreshapeと合わせる=#1000, 1/20/100, 10000, parse.(Float64,ARGS[2])/2, parse.(Float64,ARGS[1]), parse.(Float64,ARGS[2]))
+    p = Parm(#=reshapeと合わせる=#0.2, #=Nk=#100, #=Nw.これもreshapeと合わせる=#2000, 1/40/100, 10000, parse.(Float64,ARGS[2])/2, parse.(Float64,ARGS[1]), parse.(Float64,ARGS[2]))
     se = SE(swise(p.M,p.U)...)
-    Nkh = Int(Nk/2)
+    Nkh = Int(p.Nk/2)
     println("NK = $(p.Nk)")
    
     hsbz= []
@@ -258,6 +294,8 @@ function mainU()
     trghs = SharedArray{Float64}(length(va.hsbz))
     detghs = SharedArray{Float64}(length(va.hsbz))
     sqdetghs = SharedArray{Float64}(length(va.hsbz))
+    trghsm = SharedArray{Float64}(length(va.hsbz))
+    sqdetghsm = SharedArray{Float64}(length(va.hsbz))
     @sync @distributed for i = 1:length(va.hsbz)
         kxhs[i] = va.hsbz[i][1]
         kyhs[i] = va.hsbz[i][2]
@@ -265,18 +303,36 @@ function mainU()
         trghs[i] = trgk
         detghs[i] = detgk
         sqdetghs[i] = sqdetgk
+        trghsm[i] = trgkm(va.hsbz[i],p.M)
+        sqdetghsm[i] = detgkm(va.hsbz[i],p.M)
 
     end
     
-    plot(trghs,ylabel = "QuantumMetric",label = L"\mathrm{Tr}(g)",xticks = 
-    ([1,Int(length(va.hsbz)/3),Int(length(va.hsbz)*2/3),length(va.hsbz)],[L"\Gamma",L"X",L"M",L"\Gamma"]))
-    plot!(detghs,ylabel = "QuantumMetric",label = L"\mathrm{det}(g)",xticks = 
-    ([1,Int(length(va.hsbz)/3),Int(length(va.hsbz)*2/3),length(va.hsbz)],[L"\Gamma",L"X",L"M",L"\Gamma"]))
-    plot!(sqdetghs,ylabel = "QuantumMetric",label = L"\sqrt{\mathrm{det}(g)}",xticks = 
-    ([1,Int(length(va.hsbz)/3),Int(length(va.hsbz)*2/3),length(va.hsbz)],[L"\Gamma",L"X",L"M",L"\Gamma"]))
+    ENV["GKSwstype"]="nul"
 
+    plot(trghs,ylabel = "QuantumMetric",label = L"\mathrm{Tr}(g)",xticks = 
+    ([1,Int(length(va.hsbz)/3),Int(length(va.hsbz)*2/3),length(va.hsbz)],[L"\Gamma",L"\mathrm{X}",L"\mathrm{M}",L"\Gamma"]))
+    plot!(detghs,ylabel = "QuantumMetric",label = L"\mathrm{det}(g)",xticks = 
+    ([1,Int(length(va.hsbz)/3),Int(length(va.hsbz)*2/3),length(va.hsbz)],[L"\Gamma",L"\mathrm{X}",L"\mathrm{M}",L"\Gamma"]))
+    plot!(sqdetghs,ylabel = "QuantumMetric",label = L"\sqrt{\mathrm{det}(g)}",xticks = 
+    ([1,Int(length(va.hsbz)/3),Int(length(va.hsbz)*2/3),length(va.hsbz)],[L"\Gamma",L"\mathrm{X}",L"\mathrm{M}",L"\Gamma"]))
+    savefig("./metric_hs_M=$(ARGS[1])_U=$(ARGS[2]).svg")
+    
+    #比較
+    scatter(trghs,ylabel = "QuantumMetric",label = L"\mathrm{Tr}(g)_\mathrm{Green}",xticks = 
+    ([1,Int(length(va.hsbz)/3),Int(length(va.hsbz)*2/3),length(va.hsbz)],[L"\Gamma",L"\mathrm{X}",L"\mathrm{M}",L"\Gamma"]))
+    scatter!(trghsm,ylabel = "QuantumMetric",label = L"\mathrm{Tr}(g)_\mathrm{matrix}",xticks = 
+    ([1,Int(length(va.hsbz)/3),Int(length(va.hsbz)*2/3),length(va.hsbz)],[L"\Gamma",L"\mathrm{X}",L"\mathrm{M}",L"\Gamma"]))
+    savefig("./trcompare_hs_M=$(ARGS[1])_U=$(ARGS[2]).svg")
+    
+    scatter(sqdetghs,ylabel = "QuantumMetric",label = L"\sqrt{\mathrm{det}(g)}_\mathrm{Green}",xticks = 
+    ([1,Int(length(va.hsbz)/3),Int(length(va.hsbz)*2/3),length(va.hsbz)],[L"\Gamma",L"\mathrm{X}",L"\mathrm{M}",L"\Gamma"]))
+    scatter!(sqdetghsm,ylabel = "QuantumMetric",label =  L"\sqrt{\mathrm{det}(g)}_\mathrm{matrix}",xticks = 
+    ([1,Int(length(va.hsbz)/3),Int(length(va.hsbz)*2/3),length(va.hsbz)],[L"\Gamma",L"\mathrm{X}",L"\mathrm{M}",L"\Gamma"]))
+    savefig("./detcompare_hs_M=$(ARGS[1])_U=$(ARGS[2]).svg")
+    
     for i in 1:length(va.hsbz)
-        open("./metric_hs.dat","a+") do f
+        open("./metric_hs_M=$(ARGS[1])_U=$(ARGS[2]).dat","a+") do f
             x = kxhs[i]
             y = kyhs[i]
             trgk = trghs[i]
@@ -306,7 +362,7 @@ function mainU()
     
     for i in 1:p.Nk
         for j in 1:p.Nk
-            open("./metric.dat","a+") do f
+            open("./metric_M=$(ARGS[1])_U=$(ARGS[2]).dat","a+") do f
                 x = kxs[i,j]
                 y = kys[i,j]
                 trgk = trg[i,j]
@@ -319,38 +375,45 @@ function mainU()
         end
 
     end
-    println("write_ok")
-    
+    println("writeBZ_ok")
+    ENV["GKSwstype"]="nul"
+    surface(kx,ky,trg,xlabel = L"k_x",ylabel = L"k_y",title = L"\mathrm{Tr}(g)",color=cgrad(:rainbow))
+    savefig("./trgmap_M=$(ARGS[1])_U=$(ARGS[2]).svg")
+    surface(kx,ky,detg,xlabel = L"k_x",ylabel = L"k_y",title = L"\mathrm{det}(g)",color=cgrad(:rainbow))
+    savefig("./detmap_M=$(ARGS[1])_U=$(ARGS[2]).svg")
+    surface(kx,ky,sqdetg,xlabel = L"k_x",ylabel = L"k_y",title = L"\sqrt{\mathrm{det}(g)}",color=cgrad(:rainbow))
+    savefig("./sqdetmap_M=$(ARGS[1])_U=$(ARGS[2]).svg")
+    println("BZ_ok")
     #符号
     trsgn = SharedArray{Float64}(length(kx),length(ky))
     detsgn = SharedArray{Float64}(length(kx),length(ky))
-    @sync @distributed for i = 1:Nk
-        for j in 1:Nk
+    @sync @distributed for i = 1:p.Nk
+        for j in 1:p.Nk
             if trg[i,j] >=0
-                sgn[i,j] = 1
+                trsgn[i,j] = 1
             else
-                sgn[i,j] = -1
+                trsgn[i,j] = -1
             end
         end
     end
-    @sync @distributed for i = 1:Nk
-        for j in 1:Nk
+    @sync @distributed for i = 1:p.Nk
+        for j in 1:p.Nk
             if detg[i,j] >=0
-                sgn[i,j] = 1
+                detsgn[i,j] = 1
             else
-                sgn[i,j] = -1
+                detsgn[i,j] = -1
             end
         end
     end
     ENV["GKSwstype"]="nul"
-    heatmap(kx,ky,trsgn,xlabel = "\$kx\$",ylabel = "\$ky\$",title = L"sgn\mathrm{tr}(g)")
-    savefig("./trsgn.png")
-    heatmap(kx,ky,detsgn,xlabel = "\$kx\$",ylabel = "\$ky\$",title = L"sgn\mathrm{det}(g)")
-    savefig("./detsgn.png")
+    heatmap(kx,ky,trsgn,xlabel = L"k_x",ylabel = L"k_y",title = L"\mathrm{sgn}(\mathrm{Tr}(g))")
+    savefig("./trsgn_M=$(ARGS[1])_U=$(ARGS[2]).svg")
+    heatmap(kx,ky,detsgn,xlabel = L"k_x",ylabel = L"k_y",title = L"\mathrm{sgn}(\mathrm{det}(g))")
+    savefig("./detsgn_M=$(ARGS[1])_U=$(ARGS[2]).svg")
     println("sgn_ok")
 
     #積分値
-    open("./metric_int.dat","a+") do f
+    open("./metric_int_M=$(ARGS[1])_U=$(ARGS[2]).dat","a+") do f
         trg_int = sum(trg)*(2*pi/p.Nk)^2
         sqdetg_int = sum(sqdetg)*(2*pi/p.Nk)^2
         println(f,"$(trg_int) $(sqdetg_int)")
